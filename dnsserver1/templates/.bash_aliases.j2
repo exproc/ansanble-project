@@ -1,0 +1,5 @@
+alias cls='clear'
+
+##Portainer Rest Password
+alias portpass='docker stop portainer && docker run --rm -v $HOME/docker-apps/Portainer-ee/data:/data portainer/helper-reset-password && docker start portainer'
+

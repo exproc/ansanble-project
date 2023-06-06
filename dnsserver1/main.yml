@@ -1,0 +1,157 @@
+---
+- hosts: lxc1
+  remote_user:  deb
+  become: yes
+
+# tasks file for common
+
+    - name: Set The Local Time timezone to America/New_York
+      community.general.timezone:
+       name: America/New_York
+
+    - name: Ensure a locale exists
+      community.general.locale_gen:
+       name: en_US.UTF-8 
+       state: present  
+
+    - name: Update The Local 
+      ansible.builtin.shell:
+       cmd: update-locale LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
+
+    - name: Create The Backup Dir For DropBox if it doesn't exist
+      ansible.builtin.file:
+       path: "{{ backup_dir }}"
+       state: directory   
+
+    - name: Create The rclone Config Dir For rclone Conf if it doesn't exist
+      ansible.builtin.file:
+       path: "{{ root_config }}"
+       state: directory   
+
+    - name: Create The borgmatic.d Config Dir For borg Config if it doesn't exist
+      ansible.builtin.file:
+       path: "{{ rroot_config }}"
+       state: directory   
+
+    - name: Create The root CustomScript if it doesn't exist
+      ansible.builtin.file:
+       path: "{{ root_scripts }}"
+       state: directory      
+
+    - name: Create The Docker Apps Folder if it doesn't exist
+      ansible.builtin.file:
+       path: /etc/skel/docker-apps
+       state: directory    
+
+    - name: Copying Rclone Config
+      template:
+       src: config-rclone.j2
+       dest: "{{ root_config }}/rclone.conf"
+
+    - name: Upload Custom Bash Aliases For All Users
+      template:
+       src: .bash_aliases.j2
+       dest: /etc/skel/.bash_aliases     
+
+    - name: Upload Custom Bash Aliases For Root
+      template:
+       src: .bash_aliases.j2
+       dest: /root/.bash_aliases     
+
+
+    - name: Ensure The Custom Docker id is set to 201
+      ansible.builtin.lineinfile:
+       path: /etc/group
+       regexp: '^docker:x:'
+       line: 'docker:x:201:'   
+
+    - name: Update apt repo and cache on all Debian/Ubuntu boxes
+      apt:
+        update_cache: yes
+        force_apt_get: yes
+        cache_valid_time: 3600
+
+    - name: Upgrade all packages on servers
+      apt:
+        upgrade: dist
+        force_apt_get: yes
+
+    - name: Check if a reboot is needed on all servers
+      register: reboot_required_file
+      stat:
+        path: /var/run/reboot-required
+        get_md5: no
+
+    - name: Reboot the server if kernel updated
+      reboot:
+        msg: "Reboot initiated by Ansible for kernel updates"
+        connect_timeout: 5
+        reboot_timeout: 300
+        pre_reboot_delay: 0
+        post_reboot_delay: 30
+        test_command: uptime
+      when: reboot_required_file.stat.exists
+
+
+    - name: Install Common Apps
+      apt:
+       name:
+       - unzip
+       - zip
+       - pigz
+       - p7zip-full
+       - ufw
+       - bind9 
+       - bind9utils 
+       - bind9-doc 
+       - dnsutils
+
+   
+
+    - name: Configure ufw defaults
+      ufw: direction={{ item.direction }} policy={{ item.policy }}
+      with_items:
+      - { direction: 'incoming', policy: 'deny' }
+      - { direction: 'outgoing', policy: 'allow' }
+      notify:
+      - restart ufw
+
+    - name: Configure ufw rules
+      ufw: rule={{ item.rule }} port={{ item.port }} proto={{ item.proto }}
+      with_items:
+      #- { rule: 'limit', port: '{{ ssh_port | default("22") }}', proto: 'tcp' }
+      - { rule: 'allow', port: '{{ ssh_port | default("22") }}', proto: 'tcp' }
+      - { rule: 'allow', port: '9090', proto: 'tcp' }
+      notify:
+      - restart ufw
+
+    - name: Enable ufw logging
+      ufw: logging=on
+      notify:
+      - restart ufw
+
+    - name: Enable ufw
+      ufw: state=enabled    
+
+    - name: Adding zramswap
+      ansible.builtin.shell:
+       cmd: echo -e "ALGO=zstd\nPERCENT=100" | tee -a /etc/default/zramswap
+
+    - name: Restarting  zramswap
+      ansible.builtin.shell:
+       cmd: service zramswap reload
+
+
+    - name: Remove exim4 package
+      ansible.builtin.apt:
+       name: exim4*
+       state: absent
+       purge: yes
+
+    - name: Add Custom Sudo
+      ansible.builtin.shell:
+       cmd: echo "%wheel ALL=(ALL:ALL) NOPASSWD:ALL" >> /etc/sudoers.d/custom-sudo
+
+    - name: Add Custom Sudo
+      ansible.builtin.shell:
+       cmd: echo "%1sudo ALL=(ALL:ALL) NOPASSWD:ALL" >> /etc/sudoers.d/custom-sudo

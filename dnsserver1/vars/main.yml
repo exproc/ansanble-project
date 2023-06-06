@@ -1,0 +1,7 @@
+---
+# vars file for common
+backup_dir: /dropbox/backup
+
+root_config: /root/.config/rclone/
+root_scripts: /root/custom-scripts
+rroot_config: /root/.config/borgmatic.d
